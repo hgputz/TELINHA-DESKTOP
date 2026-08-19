@@ -41,9 +41,28 @@ telinhaDesktop.setNextCapture({ sourceId })  // a próxima getDisplayMedia usa e
 
 Com isso o `HostSidebar` pode listar as fontes com thumbnail dentro do próprio painel e dispensar o picker do shell. Enquanto o site souber que está no app, também pode esconder o seletor de entrada de áudio (o loopback torna o roteamento desnecessário) e os avisos de `screen-audio` (aqui o áudio sempre vem).
 
-## Pendências para distribuir
+## Build e release
 
-- **Ícone:** `assets/icon.ico` é o favicon do site (32 px) — serve para tray/janela, mas o `electron-builder` exige 256 px no instalador. Regerar a partir de `public/logo.png` (512 px) do repo do site.
-- **Assinatura de código:** sem certificado o SmartScreen avisa "app não reconhecido" na primeira execução. Cert OV ~US$ 200–400/ano.
-- **Auto-update:** `electron-updater` com feed estático (cabe na Hostinger). Só o shell precisa de release — a UI do produto é o site, deploy do site atualiza todo mundo.
-- `npm run dist` gera o instalador NSIS em `dist/`.
+O instalador **não fecha na máquina do dev** enquanto o Windows 11 estiver com
+Smart App Control em enforcement. Para assinar o desinstalador, o
+electron-builder monta um instalador temporário e o executa; o SAC recusa
+executar binário não assinado, então o build morre com `spawn UNKNOWN` depois
+de gerar os 100 MB do pacote — e deixa para trás um `.exe` de 168 KB que parece
+um instalador e não é. Desligar o SAC é permanente (só volta reinstalando o
+Windows), então o release sai por CI: `.github/workflows/release.yml` builda no
+runner do GitHub e sobe como **rascunho** de release ao empurrar uma tag `v*`.
+
+`npm run dist` continua servindo localmente para validar o empacotamento até a
+etapa do NSIS.
+
+## Pendências
+
+- **Smart App Control nos usuários.** O mesmo bloqueio vale para quem baixa: em
+  Windows 11 recente e sem assinatura, o instalador não roda e não existe
+  "executar assim mesmo". A página de download do site já explica isso e manda
+  usar o navegador nesse caso.
+- **Assinatura de código.** Resolve o SAC e o SmartScreen de uma vez. Cert OV
+  gira em US$ 200-400/ano; o Azure Trusted Signing sai bem mais barato, mas
+  exige pessoa jurídica com histórico. Ao ter o certificado, remover
+  `signExecutable: false` do `package.json` e apontar as credenciais.
+- **Teste manual** com dois dispositivos antes de publicar o rascunho.

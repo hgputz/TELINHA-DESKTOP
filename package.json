@@ -9,7 +9,7 @@
   "scripts": {
     "start": "electron .",
     "start:local": "electron . --url=http://localhost:3000",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win --publish never"
   },
   "build": {
     "appId": "app.telinha.desktop",
@@ -20,15 +20,28 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "assets/icon.png"
+      "icon": "assets/icon.png",
+      "signExecutable": false,
+      "artifactName": "Telinha-Setup.exe"
     },
     "nsis": {
       "oneClick": true,
       "deleteAppDataOnUninstall": false
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "hgputz",
+        "repo": "TELINHA-DESKTOP",
+        "releaseType": "draft"
+      }
+    ]
   },
   "devDependencies": {
     "electron": "^43.4.1",
     "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

@@ -40,6 +40,7 @@ const iconPath = path.join(__dirname, "..", "assets", "icon.ico")
 let mainWindow = null
 let tray = null
 let quitting = false
+let pendingUpdate = null
 
 // Fonte pré-escolhida pelo site via bridge (window.telinhaDesktop.setNextCapture):
 // quando o site ganhar seletor próprio, ele marca a fonte aqui e o handler de
@@ -65,6 +66,7 @@ if (!app.requestSingleInstanceLock()) {
     createTray()
     registerCaptureHandlers()
     registerBridge()
+    setupAutoUpdate()
   })
 }
 
@@ -144,28 +146,70 @@ function createTray() {
   tray = new Tray(nativeImage.createFromPath(iconPath))
   tray.setToolTip("Telinha")
   tray.on("click", showMainWindow)
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: "Abrir a Telinha", click: showMainWindow },
-      { type: "separator" },
-      {
-        label: "Iniciar com o Windows",
-        type: "checkbox",
-        checked: app.getLoginItemSettings().openAtLogin,
-        click: (item) => {
-          app.setLoginItemSettings({ openAtLogin: item.checked, args: ["--hidden"] })
-        },
+  refreshTrayMenu()
+}
+
+function refreshTrayMenu() {
+  const items = []
+  if (pendingUpdate) {
+    items.push(
+      { label: `Instalar a versão ${pendingUpdate} e reiniciar`, click: installUpdate },
+      { type: "separator" }
+    )
+  }
+  items.push(
+    { label: "Abrir a Telinha", click: showMainWindow },
+    { type: "separator" },
+    {
+      label: "Iniciar com o Windows",
+      type: "checkbox",
+      checked: app.getLoginItemSettings().openAtLogin,
+      click: (item) => {
+        app.setLoginItemSettings({ openAtLogin: item.checked, args: ["--hidden"] })
       },
-      { type: "separator" },
-      {
-        label: "Sair",
-        click: () => {
-          quitting = true
-          app.quit()
-        },
+    },
+    { type: "separator" },
+    { label: `Versão ${app.getVersion()}`, enabled: false },
+    {
+      label: "Sair",
+      click: () => {
+        quitting = true
+        app.quit()
       },
-    ])
+    }
   )
+  tray.setContextMenu(Menu.buildFromTemplate(items))
+}
+
+// Atualização nunca interrompe transmissão. O download é silencioso e a troca
+// só acontece quando o usuário mandar, ou sozinha no próximo encerramento
+// (autoInstallOnAppQuit, default do electron-updater) — reiniciar por conta
+// própria derrubaria quem está no ar.
+function setupAutoUpdate() {
+  if (!app.isPackaged) return // em dev não há release para comparar
+
+  const { autoUpdater } = require("electron-updater")
+  autoUpdater.on("update-downloaded", (info) => {
+    pendingUpdate = info.version
+    refreshTrayMenu()
+    tray.displayBalloon({
+      icon: nativeImage.createFromPath(iconPath),
+      title: `Telinha ${info.version} disponível`,
+      content: "Vai ser instalada quando você sair do app, ou agora pelo menu do ícone.",
+    })
+  })
+  // Falha de update é problema do update, não do app: sem rede, sem release
+  // publicado ou com o feed fora do ar, a Telinha segue funcionando calada.
+  autoUpdater.on("error", () => {})
+
+  const check = () => autoUpdater.checkForUpdates().catch(() => {})
+  check()
+  setInterval(check, 6 * 60 * 60 * 1000)
+}
+
+function installUpdate() {
+  quitting = true
+  require("electron-updater").autoUpdater.quitAndInstall()
 }
 
 // Fechar a janela e o app sumir sem explicação faz o usuário achar que fechou
