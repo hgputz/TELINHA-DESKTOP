@@ -8,7 +8,20 @@
 //   3. Vida no tray: fechar a janela esconde; a transmissão continua.
 // Toda a lógica de sala/mídia continua no site — o shell não versiona produto.
 
-const { app, BrowserWindow, Tray, Menu, desktopCapturer, ipcMain, shell, nativeImage } = require("electron")
+const electron = require("electron")
+
+// Terminais do VSCode herdam ELECTRON_RUN_AS_NODE=1; com ela o binário sobe
+// como Node puro e require("electron") devolve o caminho do executável em vez
+// da API. Detecta e relança limpo, para npm start funcionar de qualquer lugar.
+if (typeof electron === "string") {
+  const { spawnSync } = require("node:child_process")
+  const env = { ...process.env }
+  delete env.ELECTRON_RUN_AS_NODE
+  const result = spawnSync(electron, process.argv.slice(1), { env, stdio: "inherit" })
+  process.exit(result.status ?? 0)
+}
+
+const { app, BrowserWindow, Tray, Menu, desktopCapturer, ipcMain, shell, nativeImage } = electron
 const path = require("node:path")
 
 const DEFAULT_URL = "https://telinha.app"
