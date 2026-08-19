@@ -1,14 +1,20 @@
-# Empacota o instalador e sobe como rascunho de release.
+# Empacota o instalador e anexa os arquivos ao release da versão.
 #
-# O build não sai da máquina do dev por preguiça, e sim por necessidade: para
-# assinar o desinstalador, o electron-builder monta um instalador temporário e
-# o executa. Em Windows 11 com Smart App Control em enforcement, o sistema
-# recusa executar qualquer binário não assinado — inclusive esse temporário — e
-# o build morre com `spawn UNKNOWN` depois de gerar os 100 MB do pacote. O
-# runner do GitHub não tem Smart App Control, então lá o build fecha.
+# O build não sai da máquina do dev por necessidade: para assinar o
+# desinstalador, o electron-builder monta um instalador temporário e o executa.
+# Em Windows 11 com Smart App Control em enforcement, o sistema recusa executar
+# binário não assinado — inclusive esse temporário — e o build morre com
+# `spawn UNKNOWN` depois de gerar os 100 MB do pacote. O runner do GitHub não
+# tem Smart App Control, então lá o build fecha.
 #
-# Sobe como rascunho de propósito: mídia se valida com teste manual em máquina
-# de verdade, e binário não testado não vira link público sozinho.
+# O upload NÃO usa o publisher do electron-builder (`--publish always`). Ele
+# subiu só o .blockmap na v0.1.0, deixando de fora o instalador e o latest.yml,
+# e mesmo assim marcou o passo como sucesso — uma release quebrada que passa no
+# CI é pior que uma que falha. O `gh release upload` abaixo lista os arquivos um
+# a um e retorna erro se algum faltar.
+#
+# O release sai como rascunho de propósito: mídia se valida com teste manual em
+# máquina de verdade, e binário não testado não vira link público sozinho.
 
 name: Release
 
@@ -33,12 +39,46 @@ jobs:
 
       - run: npm ci
 
-      - name: Empacotar e publicar como rascunho
-        run: npx electron-builder --win --publish always
+      - name: Empacotar
+        run: npx electron-builder --win --publish never
+
+      # A tag vem do package.json, não do ref: assim o `workflow_dispatch`
+      # (usado para reparar um release já criado) acerta o mesmo alvo que o
+      # push da tag, em vez de tentar criar um release chamado "main".
+      - name: Descobrir a versão
+        id: versao
+        shell: bash
+        run: echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # Falha se qualquer um dos três não existir — é o que pega um pacote
+      # incompleto antes de ele virar link no site. O latest.yml é o que o
+      # electron-updater lê; sem ele ninguém recebe atualização.
+      - name: Conferir os arquivos
+        shell: bash
+        run: |
+          set -euo pipefail
+          for arquivo in dist/Telinha-Setup.exe dist/latest.yml dist/Telinha-Setup.exe.blockmap; do
+            test -s "$arquivo" || { echo "FALTOU: $arquivo"; exit 1; }
+            echo "ok: $arquivo ($(du -h "$arquivo" | cut -f1))"
+          done
+
+      - name: Anexar ao release
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.versao.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --title "$TAG" --notes ""
+          gh release upload "$TAG" \
+            dist/Telinha-Setup.exe \
+            dist/latest.yml \
+            dist/Telinha-Setup.exe.blockmap \
+            --clobber
 
       - uses: actions/upload-artifact@v4
         with:
           name: instalador
-          path: dist/Telinha-Setup.exe
+          path: |
+            dist/Telinha-Setup.exe
+            dist/latest.yml
