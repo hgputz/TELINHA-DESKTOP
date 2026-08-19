@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Escolher o que compartilhar</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      font-family: system-ui, "Segoe UI", sans-serif;
+      background: #09090b;
+      color: #fafafa;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 20px;
+    }
+    h2 {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #a1a1aa;
+      margin: 12px 0 8px;
+    }
+    h2:first-child { margin-top: 0; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    .source {
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 10px;
+      padding: 8px;
+      cursor: pointer;
+      text-align: left;
+      color: inherit;
+      font: inherit;
+    }
+    .source:hover { border-color: #52525b; }
+    .source.selected { border-color: #fafafa; background: #27272a; }
+    .thumb {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: contain;
+      background: #000;
+      border-radius: 6px;
+      display: block;
+    }
+    .thumb.empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #52525b;
+      font-size: 11px;
+    }
+    .label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 7px;
+      min-width: 0;
+    }
+    .label img { width: 14px; height: 14px; flex: none; }
+    .label span {
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    footer {
+      flex: none;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 20px;
+      border-top: 1px solid #27272a;
+      background: #09090b;
+    }
+    .hint {
+      flex: 1;
+      font-size: 12px;
+      color: #a1a1aa;
+    }
+    button.action {
+      font: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      border-radius: 8px;
+      padding: 8px 18px;
+      cursor: pointer;
+      border: 1px solid #3f3f46;
+      background: transparent;
+      color: #fafafa;
+    }
+    button.action:hover { background: #18181b; }
+    button.action.primary {
+      background: #fafafa;
+      border-color: #fafafa;
+      color: #09090b;
+    }
+    button.action.primary:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+    .loading {
+      color: #71717a;
+      font-size: 13px;
+      padding: 24px 0;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <main id="content"><div class="loading">Carregando telas e janelas…</div></main>
+  <footer>
+    <div class="hint" id="hint"></div>
+    <button class="action" id="cancel" type="button">Cancelar</button>
+    <button class="action primary" id="share" type="button" disabled>Compartilhar</button>
+  </footer>
+  <script>
+    const content = document.getElementById("content")
+    const hint = document.getElementById("hint")
+    const shareButton = document.getElementById("share")
+    let selectedId = null
+
+    function select(id, element) {
+      selectedId = id
+      for (const node of content.querySelectorAll(".source.selected")) node.classList.remove("selected")
+      element.classList.add("selected")
+      shareButton.disabled = false
+    }
+
+    function confirmShare() {
+      if (selectedId) window.picker.choose(selectedId)
+    }
+
+    function renderSection(title, sources) {
+      if (sources.length === 0) return
+      const heading = document.createElement("h2")
+      heading.textContent = title
+      content.appendChild(heading)
+
+      const grid = document.createElement("div")
+      grid.className = "grid"
+      for (const source of sources) {
+        const card = document.createElement("button")
+        card.type = "button"
+        card.className = "source"
+
+        if (source.thumbnail) {
+          const img = document.createElement("img")
+          img.className = "thumb"
+          img.src = source.thumbnail
+          card.appendChild(img)
+        } else {
+          const empty = document.createElement("div")
+          empty.className = "thumb empty"
+          empty.textContent = "sem prévia"
+          card.appendChild(empty)
+        }
+
+        const label = document.createElement("div")
+        label.className = "label"
+        if (source.appIcon) {
+          const icon = document.createElement("img")
+          icon.src = source.appIcon
+          label.appendChild(icon)
+        }
+        const name = document.createElement("span")
+        name.textContent = source.name
+        name.title = source.name
+        label.appendChild(name)
+        card.appendChild(label)
+
+        card.addEventListener("click", () => select(source.id, card))
+        card.addEventListener("dblclick", () => {
+          select(source.id, card)
+          confirmShare()
+        })
+        grid.appendChild(card)
+      }
+      content.appendChild(grid)
+    }
+
+    window.picker.onSources(({ sources, wantsAudio }) => {
+      content.textContent = ""
+      renderSection("Telas", sources.filter((s) => s.kind === "screen"))
+      renderSection("Janelas", sources.filter((s) => s.kind === "window"))
+      hint.textContent = wantsAudio
+        ? "O áudio do sistema é transmitido junto — inclusive compartilhando janela."
+        : "Sem áudio do sistema nesta captura: a entrada de áudio escolhida no painel segue valendo."
+    })
+
+    shareButton.addEventListener("click", confirmShare)
+    document.getElementById("cancel").addEventListener("click", () => window.picker.cancel())
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") window.picker.cancel()
+      if (event.key === "Enter") confirmShare()
+    })
+  </script>
+</body>
+</html>

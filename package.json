@@ -1,0 +1,34 @@
+{
+  "name": "telinha-desktop",
+  "productName": "Telinha",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Telinha no tray do Windows: transmite a tela com o audio do sistema (loopback), sem barramento virtual.",
+  "main": "src/main.js",
+  "author": "hgputz",
+  "scripts": {
+    "start": "electron .",
+    "start:local": "electron . --url=http://localhost:3000",
+    "dist": "electron-builder --win"
+  },
+  "build": {
+    "appId": "app.telinha.desktop",
+    "productName": "Telinha",
+    "files": [
+      "src/**/*",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "deleteAppDataOnUninstall": false
+    }
+  },
+  "devDependencies": {
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3"
+  }
+}
