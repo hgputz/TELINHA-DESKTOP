@@ -23,6 +23,7 @@ if (typeof electron === "string") {
 
 const { app, BrowserWindow, Tray, Menu, desktopCapturer, ipcMain, shell, nativeImage } = electron
 const path = require("node:path")
+const fs = require("node:fs")
 
 const DEFAULT_URL = "https://telinha.app"
 
@@ -85,6 +86,9 @@ function createMainWindow() {
     icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
+      // Versão chega ao preload por argumento (env do main não propaga para o
+      // renderer): é o que deixa o site saber qual build está rodando.
+      additionalArguments: [`--telinha-version=${app.getVersion()}`],
       // Escondida no tray, a janela segue codificando: sem isto o Chromium
       // estrangula timers/render e a transmissão degrada.
       backgroundThrottling: false,
@@ -93,12 +97,23 @@ function createMainWindow() {
 
   mainWindow.loadURL(appUrl)
 
+  // Sem internet o loadURL falha e a janela ficaria preta para sempre — a
+  // versão shell do erro silencioso. Troca por uma tela local com "tentar de
+  // novo". errorCode -3 é ABORTED (navegação cancelada), que não é falha.
+  mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, _url, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3) return
+    const detail = encodeURIComponent(`${errorDescription} (${errorCode})`)
+    mainWindow.loadFile(path.join(__dirname, "offline.html"), { hash: detail })
+    mainWindow.show()
+  })
+
   // Fechar esconde para o tray. A aba continua viva, logo a transmissão e a
   // hostKey (sessionStorage) também. Sair de verdade é pelo menu do tray.
   mainWindow.on("close", (event) => {
     if (quitting) return
     event.preventDefault()
     mainWindow.hide()
+    announceTray()
   })
 
   // Links externos (LivePix etc.) abrem no navegador do sistema, nunca aqui.
@@ -151,6 +166,23 @@ function createTray() {
       },
     ])
   )
+}
+
+// Fechar a janela e o app sumir sem explicação faz o usuário achar que fechou
+// — e ele continua transmitindo. O balão aparece uma vez na vida da instalação.
+function announceTray() {
+  const flagPath = path.join(app.getPath("userData"), "tray-hint.flag")
+  try {
+    if (fs.existsSync(flagPath)) return
+    fs.writeFileSync(flagPath, "1")
+  } catch {
+    return // sem poder gravar, melhor calar do que avisar toda vez
+  }
+  tray.displayBalloon({
+    icon: nativeImage.createFromPath(iconPath),
+    title: "A Telinha continua aqui",
+    content: "A transmissão segue no ar. Clique no ícone ao lado do relógio para voltar.",
+  })
 }
 
 async function listSources() {
@@ -260,6 +292,10 @@ ipcMain.on("picker:choose", (event, id) => {
 
 // Bridge para o site (window.telinhaDesktop) — só a janela principal pode usar.
 function registerBridge() {
+  ipcMain.on("shell:retry", (event) => {
+    if (event.sender !== mainWindow.webContents) return
+    mainWindow.loadURL(appUrl)
+  })
   ipcMain.handle("desktop:get-sources", async (event) => {
     if (event.sender !== mainWindow.webContents) return []
     const sources = await listSources()
