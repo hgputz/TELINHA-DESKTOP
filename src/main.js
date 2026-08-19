@@ -136,7 +136,13 @@ function createMainWindow() {
       mainWindow.webContents.toggleDevTools()
       event.preventDefault()
     } else if (input.key.toLowerCase() === "r" && input.control && !input.alt && !input.meta) {
-      mainWindow.webContents.reload()
+      // Com Shift, ignora o cache. Sem navegador por baixo, este é o único
+      // jeito de o usuário sair de uma resposta ruim guardada em disco.
+      if (input.shift) {
+        mainWindow.webContents.reloadIgnoringCache()
+      } else {
+        mainWindow.webContents.reload()
+      }
       event.preventDefault()
     }
   })
@@ -159,6 +165,17 @@ function refreshTrayMenu() {
   }
   items.push(
     { label: "Abrir a Telinha", click: showMainWindow },
+    // Último recurso quando a página aparece crua ou desatualizada: apaga o
+    // cache em disco e recarrega. Fica no tray porque é lá que o usuário vai
+    // procurar quando a própria janela estiver estranha.
+    {
+      label: "Recarregar limpando o cache",
+      click: async () => {
+        await mainWindow.webContents.session.clearCache()
+        mainWindow.webContents.reloadIgnoringCache()
+        showMainWindow()
+      },
+    },
     { type: "separator" },
     {
       label: "Iniciar com o Windows",
@@ -254,8 +271,40 @@ function takeNextCapture() {
   return pending
 }
 
+// Uma folha de estilo que não carrega não dá erro visível: a página aparece,
+// crua, e o usuário conclui que o app quebrou. Pior, a resposta ruim fica no
+// cache em disco e sobrevive a reabrir o app — sem navegador por baixo, não há
+// Ctrl+Shift+F5 para escapar. Aqui o shell vigia CSS e JS do próprio site e,
+// na primeira falha, recarrega uma vez ignorando o cache.
+//
+// A janela de 5 minutos existe para o caso de o arquivo estar mesmo faltando no
+// servidor: sem ela, recarregar em laço castigaria o site e nunca resolveria.
+const INTERVALO_RECUPERACAO = 5 * 60 * 1000
+let ultimaRecuperacao = 0
+
+function watchCriticalResources(ses) {
+  const filtro = { urls: [`${appOrigin}/*`] }
+  const criticos = new Set(["stylesheet", "script"])
+
+  const aoFalhar = (details) => {
+    if (!criticos.has(details.resourceType)) return
+    const agora = Date.now()
+    if (agora - ultimaRecuperacao < INTERVALO_RECUPERACAO) return
+    ultimaRecuperacao = agora
+    mainWindow.webContents.reloadIgnoringCache()
+  }
+
+  // Erro de rede e resposta 4xx/5xx são eventos diferentes: um CSS que voltou
+  // 404 é uma requisição "completa" para o Chromium.
+  ses.webRequest.onErrorOccurred(filtro, aoFalhar)
+  ses.webRequest.onCompleted(filtro, (details) => {
+    if (details.statusCode >= 400) aoFalhar(details)
+  })
+}
+
 function registerCaptureHandlers() {
   const ses = mainWindow.webContents.session
+  watchCriticalResources(ses)
 
   // O site pede câmera (getUserMedia) e captura de tela; nada além disso.
   ses.setPermissionRequestHandler((_webContents, permission, callback) => {
