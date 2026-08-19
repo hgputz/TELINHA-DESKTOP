@@ -1,7 +1,7 @@
 {
   "name": "telinha-desktop",
   "productName": "Telinha",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Telinha no tray do Windows: transmite a tela com o audio do sistema (loopback), sem barramento virtual.",
   "main": "src/main.js",
