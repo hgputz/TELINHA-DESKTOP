@@ -64,6 +64,7 @@ if (!app.requestSingleInstanceLock()) {
     Menu.setApplicationMenu(null)
     createMainWindow()
     createTray()
+    registerDownloads()
     registerCaptureHandlers()
     registerBridge()
     setupAutoUpdate()
@@ -74,6 +75,16 @@ function showMainWindow() {
   if (!mainWindow) return
   mainWindow.show()
   mainWindow.focus()
+}
+
+// O que pode sair para o sistema. `mailto:` entra porque as páginas jurídicas
+// do site (privacidade e termos) prometem um canal de contato — é o endereço
+// do encarregado de dados e o caminho do arrependimento em 7 dias. Sem isto o
+// link não navega nem abre nada: promessa de LGPD virando botão morto.
+const EXTERNAL_PROTOCOLS = /^(https?|mailto):/i
+
+function openExternally(url) {
+  if (EXTERNAL_PROTOCOLS.test(url)) shell.openExternal(url)
 }
 
 function createMainWindow() {
@@ -120,13 +131,13 @@ function createMainWindow() {
 
   // Links externos (LivePix etc.) abrem no navegador do sistema, nunca aqui.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url)) shell.openExternal(url)
+    openExternally(url)
     return { action: "deny" }
   })
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (new URL(url).origin === appOrigin) return
     event.preventDefault()
-    if (/^https?:/i.test(url)) shell.openExternal(url)
+    openExternally(url)
   })
 
   // Menu de aplicação foi removido; atalhos essenciais entram à mão.
@@ -300,6 +311,39 @@ function watchCriticalResources(ses) {
   ses.webRequest.onCompleted(filtro, (details) => {
     if (details.statusCode >= 400) aoFalhar(details)
   })
+}
+
+// Clipe salva sozinho na pasta de Downloads, como no navegador.
+//
+// O site gera o clipe no próprio renderer e o entrega com <a download> sobre
+// uma blob: URL, contando com o comportamento do navegador de salvar direto.
+// No Electron, sem este handler, cada clipe abre um diálogo "Salvar como" —
+// um modal em cima da transmissão, que é justamente a hora errada para parar
+// tudo e escolher pasta. O nome do arquivo já vem pronto do site
+// (telinha-<código>-<data>-<hora>.webm), então não há nada a perguntar.
+function registerDownloads() {
+  mainWindow.webContents.session.on("will-download", (_event, item) => {
+    // setSavePath sobrescreve sem avisar: um clipe nunca pode apagar outro.
+    item.setSavePath(freeFilePath(path.join(app.getPath("downloads"), item.getFilename())))
+    item.once("done", (_e, state) => {
+      // O site avisa "clipe salvo" quando entrega o arquivo, antes de a
+      // gravação em disco terminar. Se ela falhar, o log é o único rastro.
+      if (state !== "completed") console.error("[download] terminou como", state)
+    })
+  })
+}
+
+// Primeiro caminho livre a partir do desejado: "arquivo.webm", "arquivo (2).webm"…
+function freeFilePath(target) {
+  if (!fs.existsSync(target)) return target
+  const dir = path.dirname(target)
+  const ext = path.extname(target)
+  const base = path.basename(target, ext)
+  for (let n = 2; n < 1000; n += 1) {
+    const candidate = path.join(dir, `${base} (${n})${ext}`)
+    if (!fs.existsSync(candidate)) return candidate
+  }
+  return target
 }
 
 function registerCaptureHandlers() {
